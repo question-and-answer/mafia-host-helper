@@ -6,6 +6,7 @@ import { PlayerList } from "@/components/PlayerList";
 import { RoleConfigEditor } from "@/components/RoleConfigEditor";
 import { RoleGuide } from "@/components/RoleGuide";
 import { StatusBadge } from "@/components/StatusBadge";
+import { WhiteNoisePlayer } from "@/components/WhiteNoisePlayer";
 import { expandRoles, getRecommendedRoles, getRoleTotal, getTeamForRole } from "@/lib/roles";
 import { generateRoomCode, normalizeRoomCode } from "@/lib/roomCode";
 import { shuffle } from "@/lib/shuffle";
@@ -695,6 +696,12 @@ export function HostDashboard() {
                   </p>
                 </Panel>
               )}
+
+              {room.status === "night" ? (
+                <Panel title="사회자 밤 소음">
+                  <WhiteNoisePlayer title="사회자용 소음" />
+                </Panel>
+              ) : null}
 
               <Panel title="추천 역할 구성">
                 {playerCount < 5 ? (

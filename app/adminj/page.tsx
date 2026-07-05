@@ -1,13 +1,8 @@
-import { notFound } from "next/navigation";
 import { createHash } from "crypto";
 import { cookies } from "next/headers";
-import { deleteRoom, loginSuperAdmin, setRoomStatus, toggleRoomVisibility } from "./actions";
+import { deleteRoom, loginAdminj, setRoomStatus, toggleRoomVisibility } from "./actions";
 import { createSupabaseAdmin, isSupabaseAdminConfigured } from "@/lib/supabaseAdmin";
 import type { RoomStatus } from "@/types/game";
-
-type SuperAdminPageProps = {
-  params: Promise<{ secret: string }>;
-};
 
 type AdminRoom = {
   id: string;
@@ -20,35 +15,29 @@ type AdminRoom = {
   players: { count: number }[];
 };
 
+const COOKIE_NAME = "mafia_adminj";
 const STATUS_OPTIONS: RoomStatus[] = ["waiting", "assigned", "revealed", "day", "night", "ended"];
-const COOKIE_NAME = "mafia_super_admin";
 
 export const dynamic = "force-dynamic";
 
-function getAdminToken(secret: string) {
-  const password = process.env.SUPER_ADMIN_PASSWORD;
+function getAdminToken() {
+  const password = process.env.ADMINJ_PASSWORD;
   if (!password) return "";
 
-  return createHash("sha256").update(`${secret}:${password}`).digest("hex");
+  return createHash("sha256").update(password).digest("hex");
 }
 
-export default async function SuperAdminPage({ params }: SuperAdminPageProps) {
-  const { secret } = await params;
-
-  if (!process.env.SUPER_ADMIN_SECRET || secret !== process.env.SUPER_ADMIN_SECRET) {
-    notFound();
-  }
-
+export default async function AdminjPage() {
   const cookieStore = await cookies();
-  const isLoggedIn = cookieStore.get(COOKIE_NAME)?.value === getAdminToken(secret);
+  const isLoggedIn = cookieStore.get(COOKIE_NAME)?.value === getAdminToken();
 
-  if (!process.env.SUPER_ADMIN_PASSWORD) {
+  if (!process.env.ADMINJ_PASSWORD) {
     return (
       <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-4 py-8">
         <section className="rounded-lg border border-red-200 bg-red-50 p-6 text-red-900">
           <h1 className="text-2xl font-black">관리자 비밀번호 설정 필요</h1>
           <p className="mt-3 leading-7">
-            Vercel 환경 변수에 <strong>SUPER_ADMIN_PASSWORD</strong>를 추가해 주세요.
+            Vercel 환경 변수에 <strong>ADMINJ_PASSWORD</strong>를 추가해 주세요.
           </p>
         </section>
       </main>
@@ -59,9 +48,9 @@ export default async function SuperAdminPage({ params }: SuperAdminPageProps) {
     return (
       <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4 py-8">
         <section className="rounded-lg border border-zinc-200 bg-white p-6 shadow-sm">
-          <h1 className="text-2xl font-black text-zinc-950">슈퍼 관리자 로그인</h1>
-          <p className="mt-2 text-sm text-zinc-500">비밀 URL과 비밀번호가 모두 필요합니다.</p>
-          <form action={loginSuperAdmin.bind(null, secret)} className="mt-6 space-y-3">
+          <h1 className="text-2xl font-black text-zinc-950">관리자 로그인</h1>
+          <p className="mt-2 text-sm text-zinc-500">/adminj 관리자 비밀번호를 입력하세요.</p>
+          <form action={loginAdminj} className="mt-6 space-y-3">
             <input
               name="password"
               type="password"
@@ -82,7 +71,7 @@ export default async function SuperAdminPage({ params }: SuperAdminPageProps) {
     return (
       <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-4 py-8">
         <section className="rounded-lg border border-red-200 bg-red-50 p-6 text-red-900">
-          <h1 className="text-2xl font-black">슈퍼 관리자 설정 필요</h1>
+          <h1 className="text-2xl font-black">Supabase 관리자 키 필요</h1>
           <p className="mt-3 leading-7">
             Vercel 환경 변수에 <strong>SUPABASE_SERVICE_ROLE_KEY</strong>를 추가해야 합니다.
           </p>
@@ -107,8 +96,8 @@ export default async function SuperAdminPage({ params }: SuperAdminPageProps) {
   return (
     <main className="mx-auto min-h-screen w-full max-w-5xl px-4 py-6">
       <header className="rounded-lg bg-zinc-950 p-5 text-white shadow-sm">
-        <p className="text-sm font-bold text-red-300">Secret URL</p>
-        <h1 className="mt-1 text-2xl font-black">슈퍼 관리자</h1>
+        <p className="text-sm font-bold text-red-300">/adminj</p>
+        <h1 className="mt-1 text-2xl font-black">관리자</h1>
         <p className="mt-2 text-sm text-zinc-300">최근 50개 방을 관리합니다.</p>
       </header>
 
@@ -133,12 +122,12 @@ export default async function SuperAdminPage({ params }: SuperAdminPageProps) {
                   </p>
                 </div>
                 <div className="grid grid-cols-2 gap-2 sm:min-w-72">
-                  <form action={toggleRoomVisibility.bind(null, secret, room.id, !room.is_visible)}>
+                  <form action={toggleRoomVisibility.bind(null, room.id, !room.is_visible)}>
                     <button className="min-h-11 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-black text-zinc-900">
                       {room.is_visible ? "숨기기" : "보이기"}
                     </button>
                   </form>
-                  <form action={deleteRoom.bind(null, secret, room.id)}>
+                  <form action={deleteRoom.bind(null, room.id)}>
                     <button className="min-h-11 w-full rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm font-black text-red-800">
                       방 삭제
                     </button>
@@ -148,7 +137,7 @@ export default async function SuperAdminPage({ params }: SuperAdminPageProps) {
 
               <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-6">
                 {STATUS_OPTIONS.map((status) => (
-                  <form key={status} action={setRoomStatus.bind(null, secret, room.id, status)}>
+                  <form key={status} action={setRoomStatus.bind(null, room.id, status)}>
                     <button
                       className={`min-h-10 w-full rounded-lg px-2 py-2 text-xs font-black ${
                         room.status === status

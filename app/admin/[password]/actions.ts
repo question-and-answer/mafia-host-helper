@@ -102,11 +102,51 @@ export async function resetRoom(password: string, roomId: string) {
   revalidatePath(adminPath(password));
 }
 
+export async function resetAllRooms(password: string) {
+  assertAdmin(password);
+  const supabase = createSupabaseAdmin();
+
+  const [{ error: playersError }, { error: roomsError }] = await Promise.all([
+    supabase.from("players").update({ role: null, team: null, is_alive: true }).neq("id", "00000000-0000-0000-0000-000000000000"),
+    supabase
+      .from("rooms")
+      .update({
+        status: "waiting",
+        day_number: 0,
+        discussion_seconds: 300,
+        discussion_started_at: null,
+      })
+      .neq("id", "00000000-0000-0000-0000-000000000000"),
+  ]);
+
+  if (playersError || roomsError) {
+    throw new Error(playersError?.message ?? roomsError?.message ?? "Reset all failed.");
+  }
+
+  revalidatePath(adminPath(password));
+}
+
 export async function deletePlayer(password: string, playerId: string) {
   assertAdmin(password);
   const supabase = createSupabaseAdmin();
 
   const { error } = await supabase.from("players").delete().eq("id", playerId);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  revalidatePath(adminPath(password));
+}
+
+export async function deleteAllRooms(password: string) {
+  assertAdmin(password);
+  const supabase = createSupabaseAdmin();
+
+  const { error } = await supabase
+    .from("rooms")
+    .delete()
+    .neq("id", "00000000-0000-0000-0000-000000000000");
 
   if (error) {
     throw new Error(error.message);

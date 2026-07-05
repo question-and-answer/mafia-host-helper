@@ -1,8 +1,10 @@
 import { notFound } from "next/navigation";
 import {
+  deleteAllRooms,
   deletePlayer,
   deleteRoom,
   renameRoom,
+  resetAllRooms,
   resetRoom,
   setRoomStatus,
   toggleRoomVisibility,
@@ -32,7 +34,20 @@ export const dynamic = "force-dynamic";
 export default async function AdminPage({ params }: AdminPageProps) {
   const { password } = await params;
 
-  if (!process.env.ADMIN_URL_PASSWORD || password !== process.env.ADMIN_URL_PASSWORD) {
+  if (!process.env.ADMIN_URL_PASSWORD) {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-4 py-8">
+        <section className="rounded-lg border border-red-200 bg-red-50 p-6 text-red-900">
+          <h1 className="text-2xl font-black">관리자 URL 비밀번호 설정 필요</h1>
+          <p className="mt-3 leading-7">
+            Vercel 환경 변수에 <strong>ADMIN_URL_PASSWORD</strong>를 추가해 주세요.
+          </p>
+        </section>
+      </main>
+    );
+  }
+
+  if (password !== process.env.ADMIN_URL_PASSWORD) {
     notFound();
   }
 
@@ -69,6 +84,25 @@ export default async function AdminPage({ params }: AdminPageProps) {
         <h1 className="mt-1 text-2xl font-black">관리자</h1>
         <p className="mt-2 text-sm text-zinc-300">최근 50개 방을 관리합니다.</p>
       </header>
+
+      <section className="mt-5 rounded-lg border border-red-200 bg-red-50 p-4">
+        <h2 className="text-lg font-black text-red-950">전체 문제 해결</h2>
+        <p className="mt-1 text-sm font-bold text-red-800">
+          현장 리셋용입니다. 모든 방에 영향을 줍니다.
+        </p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          <form action={resetAllRooms.bind(null, password)}>
+            <button className="min-h-12 w-full rounded-lg border border-amber-300 bg-amber-100 px-4 py-3 font-black text-amber-950">
+              모든 방 역할/상태 초기화
+            </button>
+          </form>
+          <form action={deleteAllRooms.bind(null, password)}>
+            <button className="min-h-12 w-full rounded-lg bg-red-700 px-4 py-3 font-black text-white">
+              모든 방 삭제
+            </button>
+          </form>
+        </div>
+      </section>
 
       <section className="mt-5 space-y-3">
         {rooms.length === 0 ? (

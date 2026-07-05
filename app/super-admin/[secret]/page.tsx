@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation";
-import { deleteRoom, setRoomStatus, toggleRoomVisibility } from "./actions";
+import { createHash } from "crypto";
+import { cookies } from "next/headers";
+import { deleteRoom, loginSuperAdmin, setRoomStatus, toggleRoomVisibility } from "./actions";
 import { createSupabaseAdmin, isSupabaseAdminConfigured } from "@/lib/supabaseAdmin";
 import type { RoomStatus } from "@/types/game";
 
@@ -19,14 +21,61 @@ type AdminRoom = {
 };
 
 const STATUS_OPTIONS: RoomStatus[] = ["waiting", "assigned", "revealed", "day", "night", "ended"];
+const COOKIE_NAME = "mafia_super_admin";
 
 export const dynamic = "force-dynamic";
+
+function getAdminToken(secret: string) {
+  const password = process.env.SUPER_ADMIN_PASSWORD;
+  if (!password) return "";
+
+  return createHash("sha256").update(`${secret}:${password}`).digest("hex");
+}
 
 export default async function SuperAdminPage({ params }: SuperAdminPageProps) {
   const { secret } = await params;
 
   if (!process.env.SUPER_ADMIN_SECRET || secret !== process.env.SUPER_ADMIN_SECRET) {
     notFound();
+  }
+
+  const cookieStore = await cookies();
+  const isLoggedIn = cookieStore.get(COOKIE_NAME)?.value === getAdminToken(secret);
+
+  if (!process.env.SUPER_ADMIN_PASSWORD) {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-xl flex-col justify-center px-4 py-8">
+        <section className="rounded-lg border border-red-200 bg-red-50 p-6 text-red-900">
+          <h1 className="text-2xl font-black">관리자 비밀번호 설정 필요</h1>
+          <p className="mt-3 leading-7">
+            Vercel 환경 변수에 <strong>SUPER_ADMIN_PASSWORD</strong>를 추가해 주세요.
+          </p>
+        </section>
+      </main>
+    );
+  }
+
+  if (!isLoggedIn) {
+    return (
+      <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-4 py-8">
+        <section className="rounded-lg border border-zinc-200 bg-white p-6 shadow-sm">
+          <h1 className="text-2xl font-black text-zinc-950">슈퍼 관리자 로그인</h1>
+          <p className="mt-2 text-sm text-zinc-500">비밀 URL과 비밀번호가 모두 필요합니다.</p>
+          <form action={loginSuperAdmin.bind(null, secret)} className="mt-6 space-y-3">
+            <input
+              name="password"
+              type="password"
+              placeholder="관리자 비밀번호"
+              className="h-14 w-full rounded-lg border border-zinc-300 px-4 text-lg font-bold text-zinc-950 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100"
+              required
+            />
+            <button className="min-h-14 w-full rounded-lg bg-zinc-950 px-5 py-4 text-lg font-black text-white">
+              들어가기
+            </button>
+          </form>
+        </section>
+      </main>
+    );
   }
 
   if (!isSupabaseAdminConfigured) {

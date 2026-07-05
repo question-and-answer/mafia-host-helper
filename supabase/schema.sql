@@ -176,16 +176,16 @@ as '
 declare
   updated_room public.rooms;
 begin
-  update public.rooms
+  update public.rooms as room_row
   set
-    name = coalesce(nullif(trim(p_name), ''''), name),
-    is_visible = coalesce(p_is_visible, is_visible),
+    name = coalesce(nullif(trim(p_name), ''''), room_row.name),
+    is_visible = coalesce(p_is_visible, room_row.is_visible),
     password_hash = case
       when p_clear_password then null
       when nullif(trim(coalesce(p_password, '''')), '''') is not null then crypt(trim(p_password), gen_salt(''bf''))
-      else password_hash
+      else room_row.password_hash
     end
-  where id = p_room_id
+  where room_row.id = p_room_id
   returning * into updated_room;
 
   return query

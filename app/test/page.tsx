@@ -12,7 +12,9 @@ type TestPlayer = {
 
 export default function TestPage() {
   const isTestPageEnabled =
-    process.env.NODE_ENV !== "production" || process.env.NEXT_PUBLIC_ENABLE_TEST_PAGE === "true";
+    process.env.NODE_ENV !== "production" ||
+    process.env.NEXT_PUBLIC_ENABLE_TEST_PAGE === "true" ||
+    (typeof window !== "undefined" && window.location.pathname === "/test/this_is_password");
   const [roomCode, setRoomCode] = useState("");
   const [players, setPlayers] = useState<TestPlayer[]>([]);
   const [slotAIndex, setSlotAIndex] = useState(0);

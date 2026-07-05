@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type NoiseMode = "white" | "pink" | "brown" | "rain" | "cafe";
+type AudioFileMode = "file1" | "file2" | "file3";
+type SoundMode = NoiseMode | AudioFileMode;
 
 const NOISE_OPTIONS: { id: NoiseMode; label: string; description: string }[] = [
   { id: "white", label: "백색소음", description: "고른 샤아 소리" },
@@ -11,6 +13,14 @@ const NOISE_OPTIONS: { id: NoiseMode; label: string; description: string }[] = [
   { id: "rain", label: "빗소리", description: "잔잔한 빗소리 느낌" },
   { id: "cafe", label: "카페소음", description: "작게 웅성거리는 느낌" },
 ];
+
+const AUDIO_FILE_OPTIONS: { id: AudioFileMode; label: string; description: string; src: string }[] = [
+  { id: "file1", label: "준비한 소리 1", description: "public/audio/night-noise-1.mp3", src: "/audio/night-noise-1.mp3" },
+  { id: "file2", label: "준비한 소리 2", description: "public/audio/night-noise-2.mp3", src: "/audio/night-noise-2.mp3" },
+  { id: "file3", label: "준비한 소리 3", description: "public/audio/night-noise-3.mp3", src: "/audio/night-noise-3.mp3" },
+];
+
+const SOUND_OPTIONS = [...NOISE_OPTIONS, ...AUDIO_FILE_OPTIONS];
 
 type WhiteNoisePlayerProps = {
   title?: string;
@@ -27,11 +37,13 @@ export function WhiteNoisePlayer({
 }: WhiteNoisePlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isArmed, setIsArmed] = useState(false);
-  const [mode, setMode] = useState<NoiseMode>("white");
+  const [mode, setMode] = useState<SoundMode>("white");
   const [volume, setVolume] = useState(0.18);
+  const [audioError, setAudioError] = useState("");
   const audioContextRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
   const gainRef = useRef<GainNode | null>(null);
+  const audioElementRef = useRef<HTMLAudioElement | null>(null);
   const lastAutoStartKeyRef = useRef<string | undefined>(undefined);
 
   const stopNoise = useCallback((closeContext = true) => {
@@ -40,6 +52,8 @@ export function WhiteNoisePlayer({
     } catch {
       // The source may already be stopped.
     }
+    audioElementRef.current?.pause();
+    audioElementRef.current = null;
     sourceRef.current = null;
     gainRef.current = null;
     if (closeContext) {
@@ -51,12 +65,14 @@ export function WhiteNoisePlayer({
     setIsPlaying(false);
   }, []);
 
-  const startNoise = useCallback(async () => {
+  const startGeneratedNoise = useCallback(async (noiseMode: NoiseMode) => {
     try {
       sourceRef.current?.stop();
     } catch {
       // The source may already be stopped.
     }
+    audioElementRef.current?.pause();
+    audioElementRef.current = null;
     sourceRef.current = null;
     gainRef.current = null;
 
@@ -71,7 +87,7 @@ export function WhiteNoisePlayer({
     const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
     const output = buffer.getChannelData(0);
 
-    fillNoiseBuffer(output, mode, audioContext.sampleRate);
+    fillNoiseBuffer(output, noiseMode, audioContext.sampleRate);
 
     const source = audioContext.createBufferSource();
     const gain = audioContext.createGain();
@@ -86,7 +102,44 @@ export function WhiteNoisePlayer({
     sourceRef.current = source;
     gainRef.current = gain;
     setIsPlaying(true);
-  }, [mode, volume]);
+  }, [volume]);
+
+  const startAudioFile = useCallback(async (fileMode: AudioFileMode) => {
+    try {
+      sourceRef.current?.stop();
+    } catch {
+      // The source may already be stopped.
+    }
+    sourceRef.current = null;
+    gainRef.current = null;
+    void audioContextRef.current?.close();
+    audioContextRef.current = null;
+
+    const option = AUDIO_FILE_OPTIONS.find((item) => item.id === fileMode);
+    if (!option) return;
+
+    audioElementRef.current?.pause();
+    const audio = new Audio(option.src);
+    audio.loop = true;
+    audio.volume = volume;
+    audioElementRef.current = audio;
+    await audio.play();
+    setIsPlaying(true);
+  }, [volume]);
+
+  const startNoise = useCallback(async () => {
+    setAudioError("");
+    try {
+      if (isAudioFileMode(mode)) {
+        await startAudioFile(mode);
+      } else {
+        await startGeneratedNoise(mode);
+      }
+    } catch {
+      setAudioError("오디오 파일을 재생하지 못했습니다. 파일 경로를 확인하거나 기본 소음을 선택해 주세요.");
+      setIsPlaying(false);
+    }
+  }, [mode, startAudioFile, startGeneratedNoise]);
 
   useEffect(() => {
     if (!armStorageKey || typeof window === "undefined") return;
@@ -115,6 +168,9 @@ export function WhiteNoisePlayer({
     if (gainRef.current) {
       gainRef.current.gain.value = nextVolume;
     }
+    if (audioElementRef.current) {
+      audioElementRef.current.volume = nextVolume;
+    }
   };
 
   return (
@@ -125,7 +181,7 @@ export function WhiteNoisePlayer({
       </div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-        {NOISE_OPTIONS.map((option) => (
+        {SOUND_OPTIONS.map((option) => (
           <button
             key={option.id}
             type="button"
@@ -193,13 +249,18 @@ export function WhiteNoisePlayer({
 
       <p className="text-center text-sm text-zinc-500">
         {isPlaying
-          ? `${NOISE_OPTIONS.find((option) => option.id === mode)?.label} 재생 중입니다.`
+          ? `${SOUND_OPTIONS.find((option) => option.id === mode)?.label} 재생 중입니다.`
           : isArmed
             ? "사회자가 밤을 시작하면 자동 재생을 시도합니다."
             : "정지 상태입니다."}
       </p>
+      {audioError ? <p className="text-center text-sm font-bold text-red-700">{audioError}</p> : null}
     </div>
   );
+}
+
+function isAudioFileMode(mode: SoundMode): mode is AudioFileMode {
+  return mode === "file1" || mode === "file2" || mode === "file3";
 }
 
 function fillNoiseBuffer(output: Float32Array, mode: NoiseMode, sampleRate: number) {

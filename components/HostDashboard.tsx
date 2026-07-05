@@ -7,7 +7,7 @@ import { RoleConfigEditor } from "@/components/RoleConfigEditor";
 import { RoleGuide } from "@/components/RoleGuide";
 import { StatusBadge } from "@/components/StatusBadge";
 import { WhiteNoisePlayer } from "@/components/WhiteNoisePlayer";
-import { expandRoles, getRecommendedRoles, getRoleTotal, getTeamForRole } from "@/lib/roles";
+import { ROLE_ORDER, expandRoles, getRecommendedRoles, getRoleTotal, getTeamForRole } from "@/lib/roles";
 import { generateRoomCode, normalizeRoomCode } from "@/lib/roomCode";
 import { shuffle } from "@/lib/shuffle";
 import { isSupabaseConfigured, supabase } from "@/lib/supabaseClient";
@@ -18,6 +18,7 @@ export function HostDashboard() {
   const [room, setRoom] = useState<Room | null>(null);
   const [players, setPlayers] = useState<Player[]>([]);
   const [roleCounts, setRoleCounts] = useState<RoleCounts>({});
+  const [manualRoles, setManualRoles] = useState<Record<string, string>>({});
   const [recoverCode, setRecoverCode] = useState("");
   const [roomName, setRoomName] = useState("마피아 게임방");
   const [isVisible, setIsVisible] = useState(true);
@@ -32,6 +33,30 @@ export function HostDashboard() {
 
   const playerCount = players.length;
   const roleTotal = getRoleTotal(roleCounts);
+  const manualRoleStats = useMemo(() => {
+    const manualCounts: RoleCounts = {};
+    Object.values(manualRoles).forEach((role) => {
+      if (!role) return;
+      manualCounts[role] = (manualCounts[role] ?? 0) + 1;
+    });
+
+    const remainingCounts = Object.fromEntries(
+      Object.entries(roleCounts).map(([role, count]) => [
+        role,
+        Math.max(Number(count || 0) - Number(manualCounts[role] || 0), 0),
+      ]),
+    ) as RoleCounts;
+    const overAssignedRoles = Object.entries(manualCounts)
+      .filter(([role, count]) => count > Number(roleCounts[role] || 0))
+      .map(([role]) => role);
+
+    return {
+      manualCounts,
+      manualTotal: getRoleTotal(manualCounts),
+      remainingCounts,
+      overAssignedRoles,
+    };
+  }, [manualRoles, roleCounts]);
   const joinLink = useMemo(() => {
     if (!room || typeof window === "undefined") return "";
     return `${window.location.origin}/join/${room.code}`;
@@ -263,20 +288,36 @@ export function HostDashboard() {
       return;
     }
 
-    const roles = shuffle(expandRoles(roleCounts));
-    if (roles.length !== playerCount) {
+    if (manualRoleStats.overAssignedRoles.length > 0) {
+      setError(`수동 지정이 역할 수보다 많습니다: ${manualRoleStats.overAssignedRoles.join(", ")}`);
+      return;
+    }
+
+    const fixedPlayers = players.filter((player) => Boolean(manualRoles[player.id]));
+    const randomPlayers = players.filter((player) => !manualRoles[player.id]);
+    const roles = shuffle(expandRoles(manualRoleStats.remainingCounts));
+    if (roles.length !== randomPlayers.length) {
       setError("역할 수의 합이 참가자 수와 일치하지 않습니다.");
       return;
     }
 
     setIsBusy(true);
     const results = await Promise.all(
-      players.map((player, index) =>
-        supabase
-          .from("players")
-          .update({ role: roles[index], team: getTeamForRole(roles[index]), is_alive: true })
-          .eq("id", player.id),
-      ),
+      [
+        ...fixedPlayers.map((player) => {
+          const role = manualRoles[player.id];
+          return supabase
+            .from("players")
+            .update({ role, team: getTeamForRole(role), is_alive: true })
+            .eq("id", player.id);
+        }),
+        ...randomPlayers.map((player, index) =>
+          supabase
+            .from("players")
+            .update({ role: roles[index], team: getTeamForRole(roles[index]), is_alive: true })
+            .eq("id", player.id),
+        ),
+      ],
     );
 
     if (results.some((result) => result.error)) {
@@ -289,7 +330,11 @@ export function HostDashboard() {
       .from("rooms")
       .update({ status: "assigned", discussion_started_at: null })
       .eq("id", room.id);
-    setMessage("역할을 랜덤 배정했습니다. 아직 공개되지 않았습니다.");
+    setMessage(
+      manualRoleStats.manualTotal > 0
+        ? `수동 지정 ${manualRoleStats.manualTotal}명, 나머지 ${randomPlayers.length}명을 랜덤 배정했습니다. 아직 공개되지 않았습니다.`
+        : "역할을 랜덤 배정했습니다. 아직 공개되지 않았습니다.",
+    );
     setIsBusy(false);
   }
 
@@ -720,6 +765,17 @@ export function HostDashboard() {
                 )}
               </Panel>
 
+              <Panel title="수동 역할 지정">
+                <ManualRoleAssigner
+                  players={players}
+                  roleCounts={roleCounts}
+                  manualRoles={manualRoles}
+                  manualCounts={manualRoleStats.manualCounts}
+                  remainingCounts={manualRoleStats.remainingCounts}
+                  onChange={setManualRoles}
+                />
+              </Panel>
+
               <Panel title="역할 설명">
                 <RoleGuide />
               </Panel>
@@ -728,6 +784,128 @@ export function HostDashboard() {
         </>
       )}
     </main>
+  );
+}
+
+function ManualRoleAssigner({
+  players,
+  roleCounts,
+  manualRoles,
+  manualCounts,
+  remainingCounts,
+  onChange,
+}: {
+  players: Player[];
+  roleCounts: RoleCounts;
+  manualRoles: Record<string, string>;
+  manualCounts: RoleCounts;
+  remainingCounts: RoleCounts;
+  onChange: (manualRoles: Record<string, string>) => void;
+}) {
+  const availableRoles = ROLE_ORDER.filter((role) => roleCounts[role] !== undefined);
+  const manualTotal = getRoleTotal(manualCounts);
+
+  function updatePlayerRole(playerId: string, role: string) {
+    const nextRoles = { ...manualRoles };
+    if (role) {
+      nextRoles[playerId] = role;
+    } else {
+      delete nextRoles[playerId];
+    }
+    onChange(nextRoles);
+  }
+
+  function clearManualRoles() {
+    onChange({});
+  }
+
+  function useCurrentRoles() {
+    const nextRoles: Record<string, string> = {};
+    players.forEach((player) => {
+      if (player.role) {
+        nextRoles[player.id] = player.role;
+      }
+    });
+    onChange(nextRoles);
+  }
+
+  if (players.length === 0) {
+    return <p className="text-sm font-bold text-zinc-500">참가자가 들어오면 수동 지정 표가 표시됩니다.</p>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-sm font-black text-zinc-950">
+            수동 지정 {manualTotal}명 · 나머지 {Math.max(players.length - manualTotal, 0)}명 랜덤
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={useCurrentRoles}
+              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs font-black text-zinc-800"
+            >
+              현재 역할 불러오기
+            </button>
+            <button
+              type="button"
+              onClick={clearManualRoles}
+              className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-black text-red-800"
+            >
+              수동 초기화
+            </button>
+          </div>
+        </div>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          {availableRoles.map((role) => {
+            const remaining = Number(remainingCounts[role] || 0);
+            const isOver = Number(manualCounts[role] || 0) > Number(roleCounts[role] || 0);
+            return (
+              <div
+                key={role}
+                className={`rounded-lg border px-3 py-2 text-sm font-bold ${
+                  isOver ? "border-red-200 bg-red-50 text-red-900" : "border-zinc-200 bg-white text-zinc-700"
+                }`}
+              >
+                {role}: 수동 {manualCounts[role] ?? 0} / 전체 {roleCounts[role] ?? 0} · 남음 {remaining}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="max-h-[520px] overflow-auto rounded-lg border border-zinc-200">
+        {players.map((player, index) => (
+          <label
+            key={player.id}
+            className="grid gap-2 border-b border-zinc-100 p-3 last:border-b-0 sm:grid-cols-[1fr_180px] sm:items-center"
+          >
+            <span className="min-w-0">
+              <span className="block truncate font-black text-zinc-950">
+                {index + 1}. {player.name}
+              </span>
+              <span className="text-xs font-bold text-zinc-500">
+                {manualRoles[player.id] ? "수동 지정" : "남은 역할 중 랜덤"}
+                {player.role ? ` · 현재 ${player.role}` : ""}
+              </span>
+            </span>
+            <select
+              value={manualRoles[player.id] ?? ""}
+              onChange={(event) => updatePlayerRole(player.id, event.target.value)}
+              className="h-11 rounded-lg border border-zinc-300 bg-white px-3 font-bold text-zinc-950 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100"
+            >
+              <option value="">랜덤</option>
+              {availableRoles.map((role) => (
+                <option key={role} value={role}>
+                  {role}
+                </option>
+              ))}
+            </select>
+          </label>
+        ))}
+      </div>
+    </div>
   );
 }
 

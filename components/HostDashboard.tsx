@@ -665,6 +665,9 @@ export function HostDashboard() {
                     밤 시작
                   </ActionButton>
                 </div>
+                <p className="mt-3 rounded-lg bg-indigo-50 p-3 text-sm font-bold leading-6 text-indigo-950">
+                  밤 시작을 누르면 참가자 화면이 밤으로 바뀌고, 미리 소음 준비를 눌러둔 휴대폰은 동시에 소음 재생을 시도합니다.
+                </p>
                 <button
                   type="button"
                   onClick={resetGame}

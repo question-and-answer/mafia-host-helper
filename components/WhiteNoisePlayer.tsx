@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type NoiseMode = "white" | "pink" | "brown" | "rain" | "cafe";
 
@@ -12,19 +12,61 @@ const NOISE_OPTIONS: { id: NoiseMode; label: string; description: string }[] = [
   { id: "cafe", label: "카페소음", description: "작게 웅성거리는 느낌" },
 ];
 
-export function WhiteNoisePlayer({ title = "소음 재생" }: { title?: string }) {
+type WhiteNoisePlayerProps = {
+  title?: string;
+  helperText?: string;
+  armStorageKey?: string;
+  autoStartKey?: string;
+};
+
+export function WhiteNoisePlayer({
+  title = "소음 재생",
+  helperText = "자동 재생은 처음부터 허용되지 않습니다. 먼저 준비하거나 직접 재생하세요.",
+  armStorageKey,
+  autoStartKey,
+}: WhiteNoisePlayerProps) {
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isArmed, setIsArmed] = useState(false);
   const [mode, setMode] = useState<NoiseMode>("white");
   const [volume, setVolume] = useState(0.18);
   const audioContextRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
   const gainRef = useRef<GainNode | null>(null);
+  const lastAutoStartKeyRef = useRef<string | undefined>(undefined);
 
-  const startNoise = async () => {
-    stopNoise();
+  const stopNoise = useCallback((closeContext = true) => {
+    try {
+      sourceRef.current?.stop();
+    } catch {
+      // The source may already be stopped.
+    }
+    sourceRef.current = null;
+    gainRef.current = null;
+    if (closeContext) {
+      void audioContextRef.current?.close();
+      audioContextRef.current = null;
+    } else {
+      void audioContextRef.current?.suspend();
+    }
+    setIsPlaying(false);
+  }, []);
+
+  const startNoise = useCallback(async () => {
+    try {
+      sourceRef.current?.stop();
+    } catch {
+      // The source may already be stopped.
+    }
+    sourceRef.current = null;
+    gainRef.current = null;
 
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    const audioContext = new AudioContextClass();
+    const existingContext = audioContextRef.current;
+    const audioContext =
+      existingContext && existingContext.state !== "closed" ? existingContext : new AudioContextClass();
+    if (audioContext.state === "suspended") {
+      await audioContext.resume();
+    }
     const bufferSize = audioContext.sampleRate * 3;
     const buffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
     const output = buffer.getChannelData(0);
@@ -44,19 +86,28 @@ export function WhiteNoisePlayer({ title = "소음 재생" }: { title?: string }
     sourceRef.current = source;
     gainRef.current = gain;
     setIsPlaying(true);
-  };
+  }, [mode, volume]);
 
-  const stopNoise = () => {
-    try {
-      sourceRef.current?.stop();
-    } catch {
-      // The source may already be stopped.
+  useEffect(() => {
+    if (!armStorageKey || typeof window === "undefined") return;
+    setIsArmed(window.localStorage.getItem(armStorageKey) === "true");
+  }, [armStorageKey]);
+
+  useEffect(() => {
+    if (!autoStartKey || !isArmed || isPlaying) return;
+    if (lastAutoStartKeyRef.current === autoStartKey) return;
+
+    lastAutoStartKeyRef.current = autoStartKey;
+    void startNoise();
+  }, [autoStartKey, isArmed, isPlaying, startNoise]);
+
+  const armNoise = async () => {
+    setIsArmed(true);
+    if (armStorageKey) {
+      window.localStorage.setItem(armStorageKey, "true");
     }
-    sourceRef.current = null;
-    gainRef.current = null;
-    void audioContextRef.current?.close();
-    audioContextRef.current = null;
-    setIsPlaying(false);
+    await startNoise();
+    window.setTimeout(() => stopNoise(false), 250);
   };
 
   const updateVolume = (nextVolume: number) => {
@@ -70,7 +121,7 @@ export function WhiteNoisePlayer({ title = "소음 재생" }: { title?: string }
     <div className="space-y-4">
       <div>
         <h3 className="text-lg font-black text-zinc-950">{title}</h3>
-        <p className="mt-1 text-sm text-zinc-500">자동 재생은 하지 않습니다. 직접 눌러 재생하세요.</p>
+        <p className="mt-1 text-sm text-zinc-500">{helperText}</p>
       </div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -111,6 +162,18 @@ export function WhiteNoisePlayer({ title = "소음 재생" }: { title?: string }
         />
       </label>
 
+      {armStorageKey ? (
+        <button
+          type="button"
+          onClick={armNoise}
+          className={`min-h-14 w-full rounded-lg px-5 py-4 text-lg font-black shadow-sm active:scale-[0.99] ${
+            isArmed ? "bg-emerald-700 text-white" : "bg-indigo-800 text-white"
+          }`}
+        >
+          {isArmed ? "소음 준비 완료" : "소음 준비"}
+        </button>
+      ) : null}
+
       <div className="grid grid-cols-2 gap-3">
         <button
           type="button"
@@ -121,7 +184,7 @@ export function WhiteNoisePlayer({ title = "소음 재생" }: { title?: string }
         </button>
         <button
           type="button"
-          onClick={stopNoise}
+          onClick={() => stopNoise()}
           className="min-h-14 rounded-lg border border-zinc-300 bg-white px-5 py-4 text-lg font-black text-zinc-950 active:scale-[0.99]"
         >
           정지
@@ -129,7 +192,11 @@ export function WhiteNoisePlayer({ title = "소음 재생" }: { title?: string }
       </div>
 
       <p className="text-center text-sm text-zinc-500">
-        {isPlaying ? `${NOISE_OPTIONS.find((option) => option.id === mode)?.label} 재생 중입니다.` : "정지 상태입니다."}
+        {isPlaying
+          ? `${NOISE_OPTIONS.find((option) => option.id === mode)?.label} 재생 중입니다.`
+          : isArmed
+            ? "사회자가 밤을 시작하면 자동 재생을 시도합니다."
+            : "정지 상태입니다."}
       </p>
     </div>
   );

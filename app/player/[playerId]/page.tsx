@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { DiscussionTimer } from "@/components/DiscussionTimer";
+import { PersonalNotes } from "@/components/PersonalNotes";
 import { RoleGuide } from "@/components/RoleGuide";
 import { RoleCard } from "@/components/RoleCard";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -138,6 +139,18 @@ export default function PlayerPage() {
 
         {player && room ? (
           <>
+            <PersonalNotes storageKey={`mafia-notes-${player.id}`} />
+
+            {room.status !== "night" ? (
+              <div className="rounded-lg border border-indigo-200 bg-indigo-50 p-5 shadow-sm">
+                <WhiteNoisePlayer
+                  title="밤 소음 준비"
+                  helperText="밤이 되기 전 한 번 눌러두면, 사회자가 밤을 시작할 때 자동 재생을 시도합니다."
+                  armStorageKey={`mafia-noise-armed-${player.id}`}
+                />
+              </div>
+            ) : null}
+
             {["waiting", "assigned"].includes(room.status) ? (
               <>
                 <InfoCard text="사회자가 역할을 공개할 때까지 기다려 주세요." />
@@ -170,7 +183,12 @@ export default function PlayerPage() {
                   사플 방지를 위해 백색소음을 재생해 주세요.
                 </p>
                 <div className="mt-5">
-                  <WhiteNoisePlayer />
+                  <WhiteNoisePlayer
+                    title="사플 방지 소음"
+                    helperText="준비된 휴대폰은 밤 시작과 함께 자동 재생을 시도합니다. 안 들리면 재생을 눌러 주세요."
+                    armStorageKey={`mafia-noise-armed-${player.id}`}
+                    autoStartKey={`night-${room.id}-${room.day_number}`}
+                  />
                 </div>
               </div>
             ) : null}

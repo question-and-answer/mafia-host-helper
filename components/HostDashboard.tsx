@@ -23,6 +23,7 @@ export function HostDashboard() {
   const [usePassword, setUsePassword] = useState(false);
   const [roomPassword, setRoomPassword] = useState("");
   const [settingsPassword, setSettingsPassword] = useState("");
+  const [settingsDirty, setSettingsDirty] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [isBusy, setIsBusy] = useState(false);
@@ -42,11 +43,12 @@ export function HostDashboard() {
 
   useEffect(() => {
     if (!room) return;
+    if (settingsDirty) return;
     setRoomName(room.name);
     setIsVisible(room.is_visible);
     setUsePassword(room.has_password);
     setSettingsPassword("");
-  }, [room]);
+  }, [room, settingsDirty]);
 
   const loadRoom = useCallback(async (roomId: string) => {
     const { data, error: loadError } = await supabase.rpc("get_host_room", {
@@ -192,6 +194,7 @@ export function HostDashboard() {
 
     setRoom(updatedRoom);
     setSettingsPassword("");
+    setSettingsDirty(false);
     setMessage("방 설정을 저장했습니다.");
     setError("");
     setIsBusy(false);
@@ -468,7 +471,10 @@ export function HostDashboard() {
                 <span className="text-sm font-bold text-zinc-700">방 이름</span>
                 <input
                   value={roomName}
-                  onChange={(event) => setRoomName(event.target.value)}
+                  onChange={(event) => {
+                    setRoomName(event.target.value);
+                    setSettingsDirty(true);
+                  }}
                   className="mt-2 h-14 w-full rounded-lg border border-zinc-300 px-4 text-lg font-bold text-zinc-950 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100"
                   maxLength={40}
                 />
@@ -481,7 +487,10 @@ export function HostDashboard() {
                 <input
                   type="checkbox"
                   checked={isVisible}
-                  onChange={(event) => setIsVisible(event.target.checked)}
+                  onChange={(event) => {
+                    setIsVisible(event.target.checked);
+                    setSettingsDirty(true);
+                  }}
                   className="h-6 w-6"
                 />
               </label>
@@ -493,7 +502,10 @@ export function HostDashboard() {
                 <input
                   type="checkbox"
                   checked={usePassword}
-                  onChange={(event) => setUsePassword(event.target.checked)}
+                  onChange={(event) => {
+                    setUsePassword(event.target.checked);
+                    setSettingsDirty(true);
+                  }}
                   className="h-6 w-6"
                 />
               </label>
@@ -588,7 +600,10 @@ export function HostDashboard() {
                   {usePassword ? (
                     <input
                       value={settingsPassword}
-                      onChange={(event) => setSettingsPassword(event.target.value)}
+                      onChange={(event) => {
+                        setSettingsPassword(event.target.value);
+                        setSettingsDirty(true);
+                      }}
                       placeholder={room.has_password ? "새 비밀번호를 입력하면 변경됩니다" : "방 비밀번호"}
                       type="password"
                       className="h-12 w-full rounded-lg border border-zinc-300 px-3 font-bold text-zinc-950 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100"

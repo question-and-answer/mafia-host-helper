@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { DiscussionTimer } from "@/components/DiscussionTimer";
+import { RoleGuide } from "@/components/RoleGuide";
 import { RoleCard } from "@/components/RoleCard";
 import { StatusBadge } from "@/components/StatusBadge";
 import { WhiteNoisePlayer } from "@/components/WhiteNoisePlayer";
@@ -12,11 +13,26 @@ import type { Player, Room } from "@/types/game";
 
 export default function PlayerPage() {
   const params = useParams<{ playerId: string }>();
+  const router = useRouter();
   const playerId = params.playerId;
   const [player, setPlayer] = useState<Player | null>(null);
   const [room, setRoom] = useState<Room | null>(null);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(true);
+
+  const loadRoomState = useCallback(async (roomId: string) => {
+    const { data, error: roomError } = await supabase.rpc("get_room_state", {
+      p_room_id: roomId,
+    });
+    const ownRoom = data?.[0] ?? null;
+
+    if (roomError || !ownRoom) {
+      setError("방 정보를 찾을 수 없습니다.");
+      return;
+    }
+
+    setRoom(ownRoom);
+  }, []);
 
   const loadPlayerAndRoom = useCallback(async () => {
     if (!isSupabaseConfigured) {
@@ -39,21 +55,9 @@ export default function PlayerPage() {
 
     setPlayer(ownPlayer);
 
-    const { data: ownRoom, error: roomError } = await supabase
-      .from("rooms")
-      .select("*")
-      .eq("id", ownPlayer.room_id)
-      .maybeSingle();
-
-    if (roomError || !ownRoom) {
-      setError("방 정보를 찾을 수 없습니다.");
-      setIsLoading(false);
-      return;
-    }
-
-    setRoom(ownRoom);
+    await loadRoomState(ownPlayer.room_id);
     setIsLoading(false);
-  }, [playerId]);
+  }, [loadRoomState, playerId]);
 
   useEffect(() => {
     void loadPlayerAndRoom();
@@ -71,17 +75,34 @@ export default function PlayerPage() {
         { event: "*", schema: "public", table: "players", filter: `id=eq.${playerRowId}` },
         (payload) => setPlayer(payload.new as Player),
       )
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "rooms", filter: `id=eq.${roomId}` },
-        (payload) => setRoom(payload.new as Room),
-      )
       .subscribe();
+    const roomPollId = window.setInterval(() => void loadRoomState(roomId), 2000);
 
     return () => {
+      window.clearInterval(roomPollId);
       void supabase.removeChannel(channel);
     };
-  }, [player?.id, player?.room_id]);
+  }, [loadRoomState, player?.id, player?.room_id]);
+
+  async function leaveRoom() {
+    if (!player || !room) return;
+    const confirmed = window.confirm("방에서 나갈까요? 다시 참가하려면 이름을 다시 입력해야 합니다.");
+    if (!confirmed) return;
+
+    const { error: leaveError } = await supabase
+      .from("players")
+      .delete()
+      .eq("id", player.id)
+      .eq("room_id", room.id);
+
+    if (leaveError) {
+      setError("방에서 나가지 못했습니다. 다시 시도해 주세요.");
+      return;
+    }
+
+    window.localStorage.removeItem(`mafia-player-${room.code}`);
+    router.replace(`/join/${room.code}`);
+  }
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-md flex-col px-4 py-5">
@@ -93,6 +114,15 @@ export default function PlayerPage() {
           </div>
           {room ? <StatusBadge status={room.status} /> : null}
         </div>
+        {player && room ? (
+          <button
+            type="button"
+            onClick={leaveRoom}
+            className="mt-4 min-h-11 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-4 py-2 text-sm font-black text-white"
+          >
+            방 나가기
+          </button>
+        ) : null}
       </header>
 
       <section className="mt-5 flex-1 space-y-5">
@@ -109,7 +139,13 @@ export default function PlayerPage() {
         {player && room ? (
           <>
             {["waiting", "assigned"].includes(room.status) ? (
-              <InfoCard text="사회자가 역할을 공개할 때까지 기다려 주세요." />
+              <>
+                <InfoCard text="사회자가 역할을 공개할 때까지 기다려 주세요." />
+                <div className="rounded-lg border border-zinc-200 bg-white p-5 shadow-sm">
+                  <h2 className="mb-4 text-lg font-black text-zinc-950">시작 전 역할 설명</h2>
+                  <RoleGuide compact />
+                </div>
+              </>
             ) : null}
 
             {["revealed", "day", "night", "voting"].includes(room.status) && player.role ? (

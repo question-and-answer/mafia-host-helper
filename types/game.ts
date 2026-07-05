@@ -12,10 +12,22 @@ export type RoleCounts = Record<string, number>;
 export type Room = {
   id: string;
   code: string;
+  name: string;
+  is_visible: boolean;
+  has_password: boolean;
   status: RoomStatus;
   day_number: number;
   discussion_seconds: number;
   discussion_started_at: string | null;
+  created_at: string | null;
+};
+
+export type PublicRoom = {
+  id: string;
+  code: string;
+  name: string;
+  status: RoomStatus;
+  has_password: boolean;
   created_at: string | null;
 };
 

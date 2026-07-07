@@ -19,6 +19,8 @@ export function HostDashboard() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [roleCounts, setRoleCounts] = useState<RoleCounts>({});
   const [manualRoles, setManualRoles] = useState<Record<string, string>>({});
+  const [loverAId, setLoverAId] = useState("");
+  const [loverBId, setLoverBId] = useState("");
   const [recoverCode, setRecoverCode] = useState("");
   const [roomName, setRoomName] = useState("마피아 게임방");
   const [isVisible, setIsVisible] = useState(true);
@@ -308,13 +310,13 @@ export function HostDashboard() {
           const role = manualRoles[player.id];
           return supabase
             .from("players")
-            .update({ role, team: getTeamForRole(role), is_alive: true })
+            .update({ role, team: getTeamForRole(role), private_info: null, is_alive: true })
             .eq("id", player.id);
         }),
         ...randomPlayers.map((player, index) =>
           supabase
             .from("players")
-            .update({ role: roles[index], team: getTeamForRole(roles[index]), is_alive: true })
+            .update({ role: roles[index], team: getTeamForRole(roles[index]), private_info: null, is_alive: true })
             .eq("id", player.id),
         ),
       ],
@@ -480,7 +482,7 @@ export function HostDashboard() {
     setIsBusy(true);
     await supabase
       .from("players")
-      .update({ role: null, team: null, is_alive: true })
+      .update({ role: null, team: null, private_info: null, is_alive: true })
       .eq("room_id", room.id);
     await supabase
       .from("rooms")
@@ -492,6 +494,96 @@ export function HostDashboard() {
       })
       .eq("id", room.id);
     setMessage("게임을 초기화했습니다.");
+    setLoverAId("");
+    setLoverBId("");
+    setError("");
+    setIsBusy(false);
+  }
+
+  async function saveSecretInfo() {
+    if (!room) return;
+
+    if ((loverAId && !loverBId) || (!loverAId && loverBId)) {
+      setError("연인은 2명을 모두 선택해 주세요.");
+      return;
+    }
+
+    if (loverAId && loverAId === loverBId) {
+      setError("연인은 서로 다른 2명을 선택해야 합니다.");
+      return;
+    }
+
+    const loverA = players.find((player) => player.id === loverAId) ?? null;
+    const loverB = players.find((player) => player.id === loverBId) ?? null;
+    const mafiaPlayers = players.filter((player) => player.role === "마피아");
+
+    setIsBusy(true);
+    setError("");
+    setMessage("");
+
+    const results = await Promise.all(
+      players.map((player) => {
+        const lines: string[] = [];
+        if (loverA && loverB) {
+          if (player.id === loverA.id) {
+            lines.push(`연인: ${loverB.name}`);
+            lines.push("큐피드가 지정한 연인입니다. 연인 규칙은 사회자의 진행 방식에 따르세요.");
+          }
+          if (player.id === loverB.id) {
+            lines.push(`연인: ${loverA.name}`);
+            lines.push("큐피드가 지정한 연인입니다. 연인 규칙은 사회자의 진행 방식에 따르세요.");
+          }
+        }
+
+        if (player.role === "마피아") {
+          const teammateNames = mafiaPlayers
+            .filter((mafia) => mafia.id !== player.id)
+            .map((mafia) => mafia.name);
+          lines.push(
+            teammateNames.length > 0
+              ? `마피아 동료: ${teammateNames.join(", ")}`
+              : "마피아 동료: 없음",
+          );
+        }
+
+        return supabase
+          .from("players")
+          .update({ private_info: lines.length > 0 ? lines.join("\n") : null })
+          .eq("id", player.id)
+          .eq("room_id", room.id);
+      }),
+    );
+
+    if (results.some((result) => result.error)) {
+      setError("비밀 정보를 저장하지 못했습니다. schema.sql이 최신인지 확인해 주세요.");
+      setIsBusy(false);
+      return;
+    }
+
+    setMessage("연인 정보와 마피아 동료 정보를 저장했습니다.");
+    setIsBusy(false);
+  }
+
+  async function clearSecretInfo() {
+    if (!room) return;
+    const confirmed = window.confirm("연인/마피아 동료 비밀 정보를 모두 지울까요?");
+    if (!confirmed) return;
+
+    setIsBusy(true);
+    const { error: clearError } = await supabase
+      .from("players")
+      .update({ private_info: null })
+      .eq("room_id", room.id);
+
+    if (clearError) {
+      setError("비밀 정보를 지우지 못했습니다.");
+      setIsBusy(false);
+      return;
+    }
+
+    setLoverAId("");
+    setLoverBId("");
+    setMessage("비밀 정보를 지웠습니다.");
     setError("");
     setIsBusy(false);
   }
@@ -780,6 +872,19 @@ export function HostDashboard() {
                 />
               </Panel>
 
+              <Panel title="연인 / 마피아 비밀 정보">
+                <SecretInfoSettings
+                  players={players}
+                  loverAId={loverAId}
+                  loverBId={loverBId}
+                  isBusy={isBusy}
+                  onLoverAChange={setLoverAId}
+                  onLoverBChange={setLoverBId}
+                  onSave={saveSecretInfo}
+                  onClear={clearSecretInfo}
+                />
+              </Panel>
+
               <Panel title="역할 설명">
                 <RoleGuide />
               </Panel>
@@ -908,6 +1013,114 @@ function ManualRoleAssigner({
             </select>
           </label>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function SecretInfoSettings({
+  players,
+  loverAId,
+  loverBId,
+  isBusy,
+  onLoverAChange,
+  onLoverBChange,
+  onSave,
+  onClear,
+}: {
+  players: Player[];
+  loverAId: string;
+  loverBId: string;
+  isBusy: boolean;
+  onLoverAChange: (playerId: string) => void;
+  onLoverBChange: (playerId: string) => void;
+  onSave: () => void;
+  onClear: () => void;
+}) {
+  const mafiaPlayers = players.filter((player) => player.role === "마피아");
+  const cupidPlayers = players.filter((player) => player.role === "큐피드");
+  const loverA = players.find((player) => player.id === loverAId);
+  const loverB = players.find((player) => player.id === loverBId);
+
+  if (players.length === 0) {
+    return <p className="text-sm font-bold text-zinc-500">참가자가 들어오면 연인과 마피아 정보를 설정할 수 있습니다.</p>;
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-lg border border-amber-200 bg-amber-50 p-3">
+        <p className="text-sm font-black text-amber-950">
+          플레이어에게 보일 비밀 정보를 사회자가 설정합니다. 저장 후 역할이 공개되면 각자 자기 정보만 볼 수 있습니다.
+        </p>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block">
+          <span className="text-sm font-black text-zinc-800">연인 1</span>
+          <select
+            value={loverAId}
+            onChange={(event) => onLoverAChange(event.target.value)}
+            className="mt-2 h-12 w-full rounded-lg border border-zinc-300 bg-white px-3 font-bold text-zinc-950 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100"
+          >
+            <option value="">선택 안 함</option>
+            {players.map((player) => (
+              <option key={player.id} value={player.id}>
+                {player.name}
+                {player.role ? ` · ${player.role}` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          <span className="text-sm font-black text-zinc-800">연인 2</span>
+          <select
+            value={loverBId}
+            onChange={(event) => onLoverBChange(event.target.value)}
+            className="mt-2 h-12 w-full rounded-lg border border-zinc-300 bg-white px-3 font-bold text-zinc-950 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100"
+          >
+            <option value="">선택 안 함</option>
+            {players.map((player) => (
+              <option key={player.id} value={player.id}>
+                {player.name}
+                {player.role ? ` · ${player.role}` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-sm leading-6">
+        <p className="font-black text-zinc-950">
+          큐피드: {cupidPlayers.length > 0 ? cupidPlayers.map((player) => player.name).join(", ") : "현재 없음"}
+        </p>
+        <p className="font-bold text-zinc-600">
+          연인: {loverA && loverB ? `${loverA.name} ↔ ${loverB.name}` : "2명을 선택하면 저장됩니다."}
+        </p>
+        <p className="font-bold text-zinc-600">
+          마피아 공유:{" "}
+          {mafiaPlayers.length > 0
+            ? mafiaPlayers.map((player) => player.name).join(", ")
+            : "역할 배정 후 마피아가 있으면 서로 이름을 공유합니다."}
+        </p>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={isBusy}
+          className="min-h-12 rounded-lg bg-zinc-950 px-4 py-3 font-black text-white disabled:bg-zinc-300 disabled:text-zinc-500"
+        >
+          비밀 정보 저장
+        </button>
+        <button
+          type="button"
+          onClick={onClear}
+          disabled={isBusy}
+          className="min-h-12 rounded-lg border border-red-200 bg-red-50 px-4 py-3 font-black text-red-800 disabled:opacity-50"
+        >
+          비밀 정보 지우기
+        </button>
       </div>
     </div>
   );

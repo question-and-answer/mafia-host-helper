@@ -34,9 +34,12 @@ create table if not exists public.players (
   name text not null,
   role text null,
   team text null,
+  private_info text null,
   is_alive boolean not null default true,
   created_at timestamptz default now()
 );
+
+alter table public.players add column if not exists private_info text null;
 
 create table if not exists public.game_events (
   id uuid primary key default gen_random_uuid(),

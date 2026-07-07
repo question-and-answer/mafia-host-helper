@@ -37,6 +37,7 @@ export type Player = {
   name: string;
   role: string | null;
   team: string | null;
+  private_info: string | null;
   is_alive: boolean;
   created_at: string | null;
 };

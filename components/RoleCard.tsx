@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { ROLE_DESCRIPTIONS } from "@/lib/roleDescriptions";
 
-export function RoleCard({ role }: { role: string }) {
+export function RoleCard({ role, privateInfo }: { role: string; privateInfo?: string | null }) {
   const [isHidden, setIsHidden] = useState(false);
   const description = ROLE_DESCRIPTIONS[role] ?? {
     team: "알 수 없음",
@@ -30,6 +30,12 @@ export function RoleCard({ role }: { role: string }) {
       <p className="text-sm font-bold text-red-700">{description.team}</p>
       <h2 className="mt-2 text-5xl font-black text-zinc-950">{role}</h2>
       <p className="mt-5 text-base leading-7 text-zinc-700">목표: {description.goal}</p>
+      {privateInfo ? (
+        <div className="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-left">
+          <p className="text-sm font-black text-amber-900">사회자가 설정한 비밀 정보</p>
+          <p className="mt-2 whitespace-pre-line text-base font-bold leading-7 text-amber-950">{privateInfo}</p>
+        </div>
+      ) : null}
       <button
         type="button"
         onClick={() => setIsHidden(true)}

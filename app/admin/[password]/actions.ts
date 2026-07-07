@@ -82,7 +82,7 @@ export async function resetRoom(password: string, roomId: string) {
   const [{ error: playersError }, { error: roomError }] = await Promise.all([
     supabase
       .from("players")
-      .update({ role: null, team: null, is_alive: true })
+      .update({ role: null, team: null, private_info: null, is_alive: true })
       .eq("room_id", roomId),
     supabase
       .from("rooms")
@@ -107,7 +107,7 @@ export async function resetAllRooms(password: string) {
   const supabase = createSupabaseAdmin();
 
   const [{ error: playersError }, { error: roomsError }] = await Promise.all([
-    supabase.from("players").update({ role: null, team: null, is_alive: true }).neq("id", "00000000-0000-0000-0000-000000000000"),
+    supabase.from("players").update({ role: null, team: null, private_info: null, is_alive: true }).neq("id", "00000000-0000-0000-0000-000000000000"),
     supabase
       .from("rooms")
       .update({

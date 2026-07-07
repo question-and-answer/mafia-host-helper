@@ -44,7 +44,7 @@ export default function PlayerPage() {
 
     const { data: ownPlayer, error: playerError } = await supabase
       .from("players")
-      .select("id, room_id, name, role, team, is_alive, created_at")
+      .select("id, room_id, name, role, team, private_info, is_alive, created_at")
       .eq("id", playerId)
       .maybeSingle();
 
@@ -162,7 +162,7 @@ export default function PlayerPage() {
             ) : null}
 
             {["revealed", "day", "night", "voting"].includes(room.status) && player.role ? (
-              <RoleCard role={player.role} />
+              <RoleCard role={player.role} privateInfo={player.private_info} />
             ) : null}
 
             {room.status === "day" ? (

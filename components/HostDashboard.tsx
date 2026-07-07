@@ -683,6 +683,10 @@ export function HostDashboard() {
                 </div>
               </Panel>
 
+              <Panel title="사회자 메모">
+                <HostNotes room={room} />
+              </Panel>
+
               <Panel title={`현재 참가자 수: ${playerCount}명`}>
                 <PlayerList
                   players={players}
@@ -909,6 +913,70 @@ function ManualRoleAssigner({
   );
 }
 
+function HostNotes({ room }: { room: Room }) {
+  const [notes, setNotes] = useState("");
+  const storageKey = `mafia-host-notes-${room.id}`;
+
+  useEffect(() => {
+    setNotes(window.localStorage.getItem(storageKey) ?? "");
+  }, [storageKey]);
+
+  function updateNotes(value: string) {
+    setNotes(value);
+    window.localStorage.setItem(storageKey, value);
+  }
+
+  function addTimestamp() {
+    const now = new Date();
+    const time = now.toLocaleTimeString("ko-KR", {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    const phase = getStatusLabel(room.status);
+    const dayLabel = room.day_number > 0 ? ` ${room.day_number}일차` : "";
+    const prefix = `[${phase}${dayLabel} ${time}] `;
+    updateNotes(notes ? `${notes}\n${prefix}` : prefix);
+  }
+
+  function clearNotes() {
+    const confirmed = window.confirm("사회자 메모를 모두 지울까요?");
+    if (!confirmed) return;
+    updateNotes("");
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-bold leading-6 text-zinc-500">
+          이 메모는 현재 사회자 기기에만 저장됩니다. 진행 기록, 의심 후보, 밤 행동 결과를 적어두세요.
+        </p>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={addTimestamp}
+            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs font-black text-zinc-800"
+          >
+            현재 시점 추가
+          </button>
+          <button
+            type="button"
+            onClick={clearNotes}
+            className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-black text-red-800"
+          >
+            지우기
+          </button>
+        </div>
+      </div>
+      <textarea
+        value={notes}
+        onChange={(event) => updateNotes(event.target.value)}
+        placeholder="예: 1일차 토론 후보, 투표 결과, 밤 행동 순서, 사망자, 특이 발언..."
+        className="min-h-44 w-full resize-y rounded-lg border border-zinc-300 p-3 text-base leading-7 text-zinc-950 outline-none focus:border-red-500 focus:ring-2 focus:ring-red-100"
+      />
+    </div>
+  );
+}
+
 function MobileQuickActions({
   room,
   isBusy,
@@ -964,6 +1032,19 @@ function MobileQuickActions({
       </div>
     </div>
   );
+}
+
+function getStatusLabel(status: Room["status"]) {
+  const labels: Record<Room["status"], string> = {
+    waiting: "대기",
+    assigned: "배정",
+    revealed: "공개",
+    day: "낮",
+    night: "밤",
+    voting: "투표",
+    ended: "종료",
+  };
+  return labels[status];
 }
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
